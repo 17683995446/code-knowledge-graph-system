@@ -1,0 +1,98 @@
+<svg width="100%" viewBox="0 0 680 520">
+<defs>
+<marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+<path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+</marker>
+</defs>
+
+<!-- Title -->
+<text x="340" y="30" text-anchor="middle" class="th" style="font-size:16px;font-weight:600;">Database Schema</text>
+
+<!-- files table -->
+<g class="c-sky">
+<rect x="40" y="50" width="180" height="140" rx="8" class="box"/>
+<text x="130" y="75" text-anchor="middle" class="th">files</text>
+<line x1="50" y1="85" x2="210" y2="85" stroke="#0B7BC1" stroke-width="1"/>
+<text x="55" y="105" class="ts" style="font-family:monospace;">id INTEGER PK</text>
+<text x="55" y="125" class="ts" style="font-family:monospace;">path TEXT UNIQUE</text>
+<text x="55" y="145" class="ts" style="font-family:monospace;">language TEXT</text>
+<text x="55" y="165" class="ts" style="font-family:monospace;">hash BLOB</text>
+<text x="55" y="185" class="ts" style="font-family:monospace;">modified INTEGER</text>
+</g>
+
+<!-- types table -->
+<g class="c-mint">
+<rect x="250" y="50" width="180" height="130" rx="8" class="box"/>
+<text x="340" y="75" text-anchor="middle" class="th">types</text>
+<line x1="260" y1="85" x2="420" y2="85" stroke="#0EA466" stroke-width="1"/>
+<text x="265" y="105" class="ts" style="font-family:monospace;">id INTEGER PK</text>
+<text x="265" y="125" class="ts" style="font-family:monospace;">name TEXT</text>
+<text x="265" y="145" class="ts" style="font-family:monospace;">file_id INTEGER FK</text>
+<text x="265" y="165" class="ts" style="font-family:monospace;">kind TEXT</text>
+</g>
+
+<!-- functions table -->
+<g class="c-amber">
+<rect x="460" y="50" width="180" height="110" rx="8" class="box"/>
+<text x="550" y="75" text-anchor="middle" class="th">functions</text>
+<line x1="470" y1="85" x2="630" y2="85" stroke="#B17110" stroke-width="1"/>
+<text x="475" y="105" class="ts" style="font-family:monospace;">id INTEGER PK</text>
+<text x="475" y="125" class="ts" style="font-family:monospace;">name TEXT</text>
+<text x="475" y="145" class="ts" style="font-family:monospace;">type_id INTEGER FK</text>
+</g>
+
+<!-- calls table -->
+<g class="c-coral">
+<rect x="40" y="220" width="180" height="90" rx="8" class="box"/>
+<text x="130" y="245" text-anchor="middle" class="th">calls</text>
+<line x1="50" y1="255" x2="210" y2="255" stroke="#D33A17" stroke-width="1"/>
+<text x="55" y="275" class="ts" style="font-family:monospace;">caller_id INTEGER</text>
+<text x="55" y="295" class="ts" style="font-family:monospace;">callee_id INTEGER</text>
+</g>
+
+<!-- references table -->
+<g class="c-violet">
+<rect x="250" y="220" width="180" height="100" rx="8" class="box"/>
+<text x="340" y="245" text-anchor="middle" class="th">references</text>
+<line x1="260" y1="255" x2="420" y2="255" stroke="#9019E6" stroke-width="1"/>
+<text x="265" y="275" class="ts" style="font-family:monospace;">from_id INTEGER</text>
+<text x="265" y="295" class="ts" style="font-family:monospace;">to_id INTEGER</text>
+<text x="265" y="315" class="ts" style="font-family:monospace;">kind TEXT</text>
+</g>
+
+<!-- Relationships -->
+<g>
+<!-- files -> types -->
+<line x1="220" y1="120" x2="250" y2="120" class="arr" marker-end="url(#arrow)" stroke="#8A8A8A"/>
+<text x="235" y="110" text-anchor="middle" class="ts">1:N</text>
+
+<!-- types -> functions -->
+<line x1="430" y1="120" x2="460" y2="120" class="arr" marker-end="url(#arrow)" stroke="#8A8A8A"/>
+<text x="445" y="110" text-anchor="middle" class="ts">1:N</text>
+
+<!-- functions -> calls (caller) -->
+<path d="M 550 160 Q 550 200 220 200 Q 130 200 130 220" fill="none" stroke="#8A8A8A" marker-end="url(#arrow)"/>
+<text x="380" y="195" text-anchor="middle" class="ts">caller</text>
+
+<!-- functions -> calls (callee) -->
+<path d="M 550 160 Q 550 190 250 190 Q 160 190 160 220" fill="none" stroke="#8A8A8A" marker-end="url(#arrow)"/>
+<text x="350" y="185" text-anchor="middle" class="ts">callee</text>
+
+<!-- types -> references -->
+<line x1="340" y1="180" x2="340" y2="220" class="arr" marker-end="url(#arrow)" stroke="#8A8A8A"/>
+<text x="355" y="205" text-anchor="middle" class="ts">from/to</text>
+</g>
+
+<!-- Design Notes -->
+<g>
+<rect x="40" y="350" width="600" height="150" rx="8" fill="#F2F2F2" stroke="#BABABA"/>
+<text x="340" y="375" text-anchor="middle" class="th">Design Principles</text>
+
+<text x="60" y="405" class="ts">• Integer Primary Keys: Maximum performance, minimal storage</text>
+<text x="60" y="430" class="ts">• Foreign Key Relationships: Maintain referential integrity</text>
+<text x="60" y="455" class="ts">• Composite Unique Constraints: Prevent duplicate entries</text>
+<text x="60" y="480" class="ts">• Generic Schema: Same tables support all programming languages</text>
+<text x="60" y="505" class="ts">• Kind Field: Distinguish between class/interface/struct/enum/function</text>
+</g>
+
+</svg>

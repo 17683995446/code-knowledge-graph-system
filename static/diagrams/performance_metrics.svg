@@ -1,0 +1,61 @@
+<svg width="100%" viewBox="0 0 680 450">
+<defs>
+<marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+<path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+</marker>
+</defs>
+
+<!-- Title -->
+<text x="340" y="30" text-anchor="middle" class="th" style="font-size:16px;font-weight:600;">Performance Metrics</text>
+
+<!-- Chart Background -->
+<rect x="80" y="60" width="520" height="280" rx="8" fill="#FAFAFA" stroke="#D6D6D6"/>
+
+<!-- Y-axis labels -->
+<text x="70" y="70" text-anchor="end" class="ts">Time (s)</text>
+<text x="70" y="100" text-anchor="end" class="ts">80</text>
+<text x="70" y="150" text-anchor="end" class="ts">60</text>
+<text x="70" y="200" text-anchor="end" class="ts">40</text>
+<text x="70" y="250" text-anchor="end" class="ts">20</text>
+<text x="70" y="300" text-anchor="end" class="ts">0</text>
+
+<!-- Grid lines -->
+<line x1="80" y1="100" x2="600" y2="100" stroke="#E3E3E3" stroke-dasharray="2"/>
+<line x1="80" y1="150" x2="600" y2="150" stroke="#E3E3E3" stroke-dasharray="2"/>
+<line x1="80" y1="200" x2="600" y2="200" stroke="#E3E3E3" stroke-dasharray="2"/>
+<line x1="80" y1="250" x2="600" y2="250" stroke="#E3E3E3" stroke-dasharray="2"/>
+
+<!-- X-axis labels -->
+<text x="160" y="330" text-anchor="middle" class="ts">100K lines</text>
+<text x="340" y="330" text-anchor="middle" class="ts">1M lines</text>
+<text x="520" y="330" text-anchor="middle" class="ts">10M lines</text>
+
+<!-- Bars -->
+<!-- Full Sync Time -->
+<rect x="130" y="295" width="40" height="5" fill="#FCA18D"/>
+<rect x="310" y="240" width="40" height="60" fill="#FCA18D"/>
+<rect x="490" y="100" width="40" height="200" fill="#FCA18D"/>
+
+<!-- Single File Update Time -->
+<rect x="175" y="298" width="40" height="2" fill="#76F4C0"/>
+<rect x="355" y="294" width="40" height="6" fill="#76F4C0"/>
+<rect x="535" y="280" width="40" height="20" fill="#76F4C0"/>
+
+<!-- Legend -->
+<rect x="150" y="360" width="20" height="15" fill="#FCA18D"/>
+<text x="180" y="372" class="ts">Full Sync Time</text>
+
+<rect x="320" y="360" width="20" height="15" fill="#76F4C0"/>
+<text x="350" y="372" class="ts">Single File Update</text>
+
+<!-- Data Table -->
+<rect x="80" y="400" width="520" height="40" rx="4" fill="#F2F2F2" stroke="#D6D6D6"/>
+<text x="160" y="415" text-anchor="middle" class="ts">Code Size</text>
+<text x="340" y="415" text-anchor="middle" class="ts">Full Sync</text>
+<text x="520" y="415" text-anchor="middle" class="ts">Single Update</text>
+
+<text x="160" y="432" text-anchor="middle" class="ts">100K / 1M / 10M</text>
+<text x="340" y="432" text-anchor="middle" class="ts">30s / 8min / 70min</text>
+<text x="520" y="432" text-anchor="middle" class="ts">&lt;0.3s / &lt;0.8s / &lt;2s</text>
+
+</svg>

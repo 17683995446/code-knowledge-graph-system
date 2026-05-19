@@ -1,0 +1,94 @@
+<svg width="100%" viewBox="0 0 680 550">
+<defs>
+<marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+<path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+</marker>
+</defs>
+
+<!-- Title -->
+<text x="340" y="30" text-anchor="middle" class="th" style="font-size:16px;font-weight:600;">Sequence Diagram: File Change Processing</text>
+
+<!-- Actors/Lifelines -->
+<g>
+<!-- File System -->
+<rect x="50" y="50" width="80" height="30" rx="4" fill="#FCA18D" stroke="#D33A17"/>
+<text x="90" y="70" text-anchor="middle" class="t" dominant-baseline="central">FileSystem</text>
+<line x1="90" y1="80" x2="90" y2="500" stroke="#D6D6D6" stroke-dasharray="4"/>
+
+<!-- File Monitor -->
+<rect x="180" y="50" width="80" height="30" rx="4" fill="#F8C982" stroke="#B17110"/>
+<text x="220" y="70" text-anchor="middle" class="t" dominant-baseline="central">Monitor</text>
+<line x1="220" y1="80" x2="220" y2="500" stroke="#D6D6D6" stroke-dasharray="4"/>
+
+<!-- Debounce Queue -->
+<rect x="310" y="50" width="80" height="30" rx="4" fill="#BCF362" stroke="#639B08"/>
+<text x="350" y="70" text-anchor="middle" class="t" dominant-baseline="central">Queue</text>
+<line x1="350" y1="80" x2="350" y2="500" stroke="#D6D6D6" stroke-dasharray="4"/>
+
+<!-- Update Engine -->
+<rect x="440" y="50" width="80" height="30" rx="4" fill="#76F4C0" stroke="#0EA466"/>
+<text x="480" y="70" text-anchor="middle" class="t" dominant-baseline="central">Engine</text>
+<line x1="480" y1="80" x2="480" y2="500" stroke="#D6D6D6" stroke-dasharray="4"/>
+
+<!-- Database -->
+<rect x="570" y="50" width="80" height="30" rx="4" fill="#78F2F2" stroke="#11A2A2"/>
+<text x="610" y="70" text-anchor="middle" class="t" dominant-baseline="central">SQLite</text>
+<line x1="610" y1="80" x2="610" y2="500" stroke="#D6D6D6" stroke-dasharray="4"/>
+</g>
+
+<!-- Messages -->
+<g>
+<!-- 1. File Modified -->
+<line x1="90" y1="100" x2="220" y2="100" class="arr" marker-end="url(#arrow)" stroke="#474747"/>
+<text x="155" y="95" text-anchor="middle" class="ts">1: file_modified</text>
+
+<!-- 2. Queue Event -->
+<line x1="220" y1="130" x2="350" y2="130" class="arr" marker-end="url(#arrow)" stroke="#474747"/>
+<text x="285" y="125" text-anchor="middle" class="ts">2: queue_event</text>
+
+<!-- 3. Wait Debounce -->
+<rect x="330" y="145" width="40" height="20" rx="3" fill="#E3FDB9" stroke="#639B08"/>
+<text x="350" y="155" text-anchor="middle" class="ts">wait 1s</text>
+
+<!-- 4. Process Event -->
+<line x1="350" y1="180" x2="480" y2="180" class="arr" marker-end="url(#arrow)" stroke="#474747"/>
+<text x="415" y="175" text-anchor="middle" class="ts">3: process_event</text>
+
+<!-- 5. Delete Old Data -->
+<line x1="480" y1="210" x2="610" y2="210" class="arr" marker-end="url(#arrow)" stroke="#474747"/>
+<text x="545" y="205" text-anchor="middle" class="ts">4: DELETE old</text>
+
+<!-- 6. Parse File -->
+<line x1="480" y1="240" x2="350" y2="240" class="arr" marker-end="url(#arrow)" stroke="#474747" stroke-dasharray="4"/>
+<text x="415" y="235" text-anchor="middle" class="ts">5: parse_file</text>
+
+<!-- 7. Return AST -->
+<line x1="350" y1="270" x2="480" y2="270" class="arr" marker-end="url(#arrow)" stroke="#474747" stroke-dasharray="4"/>
+<text x="415" y="265" text-anchor="middle" class="ts">6: return AST</text>
+
+<!-- 8. Insert New Data -->
+<line x1="480" y1="300" x2="610" y2="300" class="arr" marker-end="url(#arrow)" stroke="#474747"/>
+<text x="545" y="295" text-anchor="middle" class="ts">7: INSERT new</text>
+
+<!-- 9. Commit -->
+<line x1="480" y1="330" x2="610" y2="330" class="arr" marker-end="url(#arrow)" stroke="#474747"/>
+<text x="545" y="325" text-anchor="middle" class="ts">8: COMMIT</text>
+
+<!-- 10. Notify Web -->
+<line x1="480" y1="360" x2="220" y2="360" class="arr" marker-end="url(#arrow)" stroke="#474747" stroke-dasharray="4"/>
+<text x="350" y="355" text-anchor="middle" class="ts">9: notify_update</text>
+
+<!-- 11. Refresh UI -->
+<line x1="220" y1="390" x2="90" y2="390" class="arr" marker-end="url(#arrow)" stroke="#474747" stroke-dasharray="4"/>
+<text x="155" y="385" text-anchor="middle" class="ts">10: refresh_ui</text>
+</g>
+
+<!-- Notes -->
+<g>
+<rect x="40" y="420" width="280" height="70" rx="6" fill="#FED2C7" stroke="#D33A17" opacity="0.5"/>
+<text x="50" y="445" class="ts">Note: All operations within single transaction</text>
+<text x="50" y="465" class="ts">Delete-then-insert ensures consistency</text>
+<text x="50" y="485" class="ts">Total time: &lt; 2 seconds</text>
+</g>
+
+</svg>
