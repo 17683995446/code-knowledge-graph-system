@@ -210,9 +210,10 @@ class FileMonitor:
         """Start file monitoring."""
         if self.is_running:
             return
-        
+
         self.is_running = True
-        
+        self._stop_polling.clear()  # Reset stop flag for restart support
+
         if WATCHDOG_AVAILABLE:
             self._start_watchdog()
         else:
@@ -324,7 +325,7 @@ class FileMonitor:
         
         if self.observer:
             self.observer.stop()
-            self.observer.join()
+            self.observer.join(timeout=3.0)
         
         if self.poll_thread:
             self.poll_thread.join(timeout=2.0)
