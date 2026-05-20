@@ -232,7 +232,7 @@ class IncrementalUpdateEngine:
                 pass  # Non-critical: cross-file resolution is best-effort
             
             # Step 4: Insert relationships
-            self._insert_calls(parse_result.calls, file_id, func_id_map)
+            self._insert_calls(parse_result.calls, file_id, func_id_map, type_id_map)
             self._insert_references(parse_result.references, file_id, type_id_map)
             
             # Commit transaction
@@ -320,17 +320,26 @@ class IncrementalUpdateEngine:
         
         return func_id_map
     
-    def _insert_calls(self, calls: List[Any], file_id: int, func_id_map: Dict[str, int]):
-        """Insert call relationships."""
-        cursor = self.db.connection.cursor()
+    def _insert_calls(self, calls: List[Any], file_id: int, func_id_map: Dict[str, int],
+                      type_id_map: Optional[Dict[str, int]] = None):
+        """Insert call relationships.
         
+        When a callee is not found in func_id_map (e.g., class instantiation MyClass()),
+        falls back to type_id_map to record the call.
+        """
+        cursor = self.db.connection.cursor()
+
         for call_info in calls:
             caller_key = f"{call_info.caller_type or '__module__'}.{call_info.caller_name}"
             callee_key = f"{call_info.callee_type or '__module__'}.{call_info.callee_name}"
-            
+
             caller_id = func_id_map.get(caller_key)
             callee_id = func_id_map.get(callee_key)
-            
+
+            # Fallback: callee may be a type (class instantiation like MyClass())
+            if not callee_id and type_id_map:
+                callee_id = type_id_map.get(call_info.callee_name)
+
             if caller_id and callee_id:
                 cursor.execute(
                     """INSERT OR IGNORE INTO calls (caller_id, callee_id, file_id, line_number)
@@ -483,6 +492,9 @@ class IncrementalUpdateEngine:
             dirs[:] = [d for d in dirs if not d.startswith('.') and d not in skip_dirs]
             
             for filename in files:
+                # Skip hidden files (starting with .)
+                if filename.startswith('.'):
+                    continue
                 ext = os.path.splitext(filename)[1].lower()
                 if ext in supported_extensions:
                     file_path = os.path.join(root, filename)
