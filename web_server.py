@@ -6,11 +6,16 @@ Flask-based REST API and WebSocket server for the knowledge graph visualization.
 import os
 import json
 import time
+import threading
 from typing import Dict, Any, Optional
 from datetime import datetime
 
 from flask import Flask, jsonify, request, send_from_directory, render_template_string
 from flask_cors import CORS
+
+from logging_config import get_logger
+
+logger = get_logger(__name__)
 
 # Import system modules
 from database_schema import DatabaseManager
@@ -33,6 +38,7 @@ class KnowledgeGraphServer:
                  api_key: Optional[str] = None, host: str = '0.0.0.0', port: int = 5000,
                  db_manager: Optional[DatabaseManager] = None,
                  update_engine: Optional[IncrementalUpdateEngine] = None):
+        logger.info("Initializing server for %s", project_path)
         self.project_path = os.path.abspath(project_path)
         self.database_path = database_path
         self.host = host
@@ -63,6 +69,7 @@ class KnowledgeGraphServer:
         # Statistics
         self.start_time = time.time()
         self.update_count = 0
+        self._count_lock = threading.Lock()
     
     def _register_routes(self):
         """Register all API routes."""
@@ -144,6 +151,7 @@ class KnowledgeGraphServer:
     
     def _get_system_status(self) -> Dict[str, Any]:
         """Get current system status."""
+        logger.debug("Getting system status")
         uptime = time.time() - self.start_time
         return {
             'status': 'running',
@@ -458,12 +466,15 @@ class KnowledgeGraphServer:
     
     def _perform_full_sync(self) -> Dict[str, Any]:
         """Perform full project synchronization."""
+        logger.info("Full sync requested via API")
         result = self.update_engine.perform_full_sync(self.project_path)
-        self.update_count += result.get('files_updated', 0) + result.get('files_deleted', 0)
+        with self._count_lock:
+            self.update_count += result.get('files_updated', 0) + result.get('files_deleted', 0)
         return result
     
     def _analyze_file(self, file_id: int, analysis_type: str) -> Dict[str, Any]:
         """Analyze a file using LLM."""
+        logger.info("Analyzing file_id=%d", file_id)
         self.db_manager.connect()
         
         # Get file info
@@ -473,9 +484,11 @@ class KnowledgeGraphServer:
         )
         
         if not file_info:
+            logger.warning("File not found for analysis: file_id=%d", file_id)
             return {'error': 'File not found'}
         
         file_path = file_info[0][0]
+        logger.debug("File path: %s", file_path)
         
         # Read file content
         try:
@@ -546,6 +559,7 @@ class KnowledgeGraphServer:
 
     def _search(self, query: str) -> Dict[str, Any]:
         """Search across all entities."""
+        logger.info("Searching for: %s", query)
         self.db_manager.connect()
         
         search_pattern = f'%{self._escape_like_pattern(query)}%'
@@ -568,6 +582,8 @@ class KnowledgeGraphServer:
             (search_pattern,)
         )
         
+        logger.debug("Found %d files, %d types, %d functions", len(files), len(types), len(functions))
+        
         return {
             'files': [{'id': r[0], 'path': r[1], 'language': r[2]} for r in files],
             'types': [{'id': r[0], 'name': r[1], 'kind': r[2]} for r in types],
@@ -580,19 +596,22 @@ class KnowledgeGraphServer:
     
     def start_monitoring(self):
         """Start file monitoring."""
+        logger.info("Starting file monitoring")
         if self.file_monitor is None:
             self.file_monitor = FileMonitor(self.project_path)
             
             def on_file_event(event: FileEvent):
                 result = self.update_engine.process_file_event(event)
                 if result.success:
-                    self.update_count += 1
+                    with self._count_lock:
+                        self.update_count += 1
             
             self.file_monitor.set_event_callback(on_file_event)
             self.file_monitor.start()
     
     def stop_monitoring(self):
         """Stop file monitoring."""
+        logger.info("Stopping file monitoring")
         if self.file_monitor:
             self.file_monitor.stop()
             self.file_monitor = None

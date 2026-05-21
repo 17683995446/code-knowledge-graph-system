@@ -9,6 +9,7 @@ import sys
 import argparse
 import signal
 import time
+import threading
 from typing import Optional
 
 from database_schema import DatabaseManager, create_database
@@ -44,6 +45,7 @@ class CodeKnowledgeGraphService:
         # State
         self.is_running = False
         self.update_count = 0
+        self._count_lock = threading.Lock()
         
         # Setup signal handlers
         signal.signal(signal.SIGINT, self._signal_handler)
@@ -99,7 +101,8 @@ class CodeKnowledgeGraphService:
             for error in result['errors'][:5]:
                 print(f"    - {error}")
         
-        self.update_count += result['files_updated']
+        with self._count_lock:
+            self.update_count += result['files_updated']
         return result
     
     def start_monitoring(self):
@@ -114,7 +117,8 @@ class CodeKnowledgeGraphService:
             print(f"[{event.event_type.value}] {event.file_path}")
             result = self.update_engine.process_file_event(event)
             if result.success:
-                self.update_count += 1
+                with self._count_lock:
+                    self.update_count += 1
                 print(f"  -> Processed in {result.processing_time_ms:.1f}ms")
             else:
                 print(f"  -> Error: {result.error_message}")
@@ -144,9 +148,13 @@ class CodeKnowledgeGraphService:
             update_engine=self.update_engine
         )
         
+        # Pass existing file_monitor to web_server to avoid double monitoring
+        if self.file_monitor:
+            self.web_server.file_monitor = self.file_monitor
+        
         # Start monitoring if not already running
         if not self.file_monitor:
-            self.web_server.start_monitoring()
+            self.start_monitoring()
         
         self.web_server.run(debug=debug)
     

@@ -12,6 +12,10 @@ from typing import Callable, Set, Dict, Optional
 from dataclasses import dataclass
 from enum import Enum
 
+from logging_config import get_logger
+
+logger = get_logger(__name__)
+
 # Try to import watchdog, provide fallback if not available
 try:
     from watchdog.observers import Observer
@@ -69,6 +73,23 @@ class DebounceMergeQueue:
             # Merge with existing event for same file
             if event.file_path in self.pending_events:
                 existing = self.pending_events[event.file_path]
+                logger.debug("Merged with existing event: %s -> %s for %s",
+                             existing.event_type.value, event.event_type.value, event.file_path)
+                # CREATED + DELETED = cancel out (file created then immediately deleted)
+                if existing.event_type == FileEventType.CREATED and event.event_type == FileEventType.DELETED:
+                    del self.pending_events[event.file_path]
+                    logger.debug("Cancelled CREATED+DELETED for %s", event.file_path)
+                    # Don't reset timer if no pending events remain
+                    if not self.pending_events:
+                        if self.timer:
+                            self.timer.cancel()
+                            self.timer = None
+                    elif self.timer:
+                        self.timer.cancel()
+                        self.timer = threading.Timer(self.debounce_window, self._process_pending)
+                        self.timer.daemon = True
+                        self.timer.start()
+                    return
                 # Upgrade created -> modified if file already being tracked
                 if existing.event_type == FileEventType.CREATED and event.event_type == FileEventType.MODIFIED:
                     event.event_type = FileEventType.CREATED  # Keep as created
@@ -77,6 +98,7 @@ class DebounceMergeQueue:
                     pass  # Keep deleted
             
             self.pending_events[event.file_path] = event
+            logger.debug("Event added: %s for %s", event.event_type.value, event.file_path)
             
             # Reset timer
             if self.timer:
@@ -91,14 +113,16 @@ class DebounceMergeQueue:
         with self.lock:
             events_to_process = list(self.pending_events.values())
             self.pending_events.clear()
-        
+
+        logger.debug("Processing %d pending events", len(events_to_process))
+        # Dispatch events outside the lock to avoid blocking add_event
         for event in events_to_process:
             self.processed_queue.put(event)
             if self.callback:
                 try:
                     self.callback(event)
                 except Exception as error:
-                    print(f"Error processing event callback: {error}")
+                    logger.error("Error processing event callback: %s", error)
     
     def get_event(self, timeout: Optional[float] = None) -> Optional[FileEvent]:
         """Get a processed event from the queue."""
@@ -117,6 +141,7 @@ class DebounceMergeQueue:
             events_to_process = list(self.pending_events.values())
             self.pending_events.clear()
 
+        logger.info("Shutting down, processing %d remaining events", len(events_to_process))
         # Dispatch events outside the lock
         for event in events_to_process:
             self.processed_queue.put(event)
@@ -124,7 +149,7 @@ class DebounceMergeQueue:
                 try:
                     self.callback(event)
                 except Exception as error:
-                    print(f"Error processing event callback: {error}")
+                    logger.error("Error processing event callback: %s", error)
 
 
 # Define CodeFileEventHandler only if watchdog is available
@@ -209,10 +234,13 @@ class FileMonitor:
     def start(self):
         """Start file monitoring."""
         if self.is_running:
+            logger.debug("Already running, skipping")
             return
 
+        logger.info("Starting file monitor for %s", self.project_path)
         self.is_running = True
         self._stop_polling.clear()  # Reset stop flag for restart support
+        logger.debug("_stop_polling cleared")
 
         if WATCHDOG_AVAILABLE:
             self._start_watchdog()
@@ -274,6 +302,7 @@ class FileMonitor:
                         
                         if filepath not in file_states:
                             # New file
+                            logger.debug("New file detected: %s", filepath)
                             event = FileEvent(
                                 file_path=filepath,
                                 event_type=FileEventType.CREATED,
@@ -282,6 +311,7 @@ class FileMonitor:
                             self.debounce_queue.add_event(event)
                         elif mtime > file_states[filepath]:
                             # Modified file
+                            logger.debug("Modified file detected: %s", filepath)
                             event = FileEvent(
                                 file_path=filepath,
                                 event_type=FileEventType.MODIFIED,
@@ -293,9 +323,11 @@ class FileMonitor:
                     except OSError:
                         pass
             
+            logger.debug("Poll iteration: %d files scanned", len(current_files))
             # Check for deleted files
             for filepath in list(file_states.keys()):
                 if filepath not in current_files:
+                    logger.debug("Deleted file detected: %s", filepath)
                     event = FileEvent(
                         file_path=filepath,
                         event_type=FileEventType.DELETED,
@@ -320,6 +352,7 @@ class FileMonitor:
     
     def stop(self):
         """Stop file monitoring."""
+        logger.info("Stopping file monitor")
         self.is_running = False
         self._stop_polling.set()
         

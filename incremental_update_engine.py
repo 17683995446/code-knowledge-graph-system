@@ -12,9 +12,12 @@ from collections import deque
 from typing import Optional, List, Dict, Any
 from dataclasses import dataclass
 
+from logging_config import get_logger
 from database_schema import DatabaseManager
 from parser_interface import get_parser_for_file, identify_language, ParseResult
 from file_monitor_module import FileEvent, FileEventType
+
+logger = get_logger(__name__)
 
 # Auto-import built-in parsers so they register themselves.
 # Without this, process_file_event would fail with "No parser available"
@@ -76,6 +79,7 @@ class IncrementalUpdateEngine:
         This is the main entry point for file updates.
         Includes retry logic for SQLite locked errors.
         """
+        logger.info("Processing event: %s for %s", event.event_type.value, event.file_path)
         start_time = time.time()
         max_retries = 3
         
@@ -87,8 +91,10 @@ class IncrementalUpdateEngine:
                     return self._handle_file_update(event.file_path, event.event_type.value, start_time)
             except sqlite3.OperationalError as error:
                 if "database is locked" in str(error) and attempt < max_retries - 1:
+                    logger.warning("Retry attempt %d for %s (database locked)", attempt + 1, event.file_path)
                     time.sleep(0.05 * (attempt + 1))  # Exponential backoff: 50ms, 100ms
                     continue
+                logger.error("Failed to process event %s for %s: %s", event.event_type.value, event.file_path, error)
                 processing_time = (time.time() - start_time) * 1000
                 stats = UpdateStatistics(
                     file_path=event.file_path,
@@ -100,6 +106,7 @@ class IncrementalUpdateEngine:
                 self.stats_history.append(stats)
                 return stats
             except Exception as error:
+                logger.error("Failed to process event %s for %s: %s", event.event_type.value, event.file_path, error)
                 processing_time = (time.time() - start_time) * 1000
                 stats = UpdateStatistics(
                     file_path=event.file_path,
@@ -113,11 +120,13 @@ class IncrementalUpdateEngine:
     
     def _handle_file_deletion(self, file_path: str, start_time: float) -> UpdateStatistics:
         """Handle file deletion - remove all related data."""
+        logger.info("Deleting file: %s", file_path)
         # Check if file exists in database first
         file_id = self.db.get_file_id_by_path(file_path)
 
         if not file_id:
             # File not in database, nothing to do
+            logger.debug("File not in database, skipping: %s", file_path)
             processing_time = (time.time() - start_time) * 1000
             stats = UpdateStatistics(
                 file_path=file_path,
@@ -149,6 +158,7 @@ class IncrementalUpdateEngine:
                 except Exception:
                     pass  # Don't fail the operation if logging fails
 
+            logger.info("Deleted file %s (id=%d)", file_path, file_id)
             stats = UpdateStatistics(
                 file_path=file_path,
                 event_type='deleted',
@@ -164,6 +174,7 @@ class IncrementalUpdateEngine:
     
     def _handle_file_update(self, file_path: str, event_type: str, start_time: float) -> UpdateStatistics:
         """Handle file creation or modification."""
+        logger.info("Updating file: %s", file_path)
         # Check if file exists and is readable
         if not os.path.exists(file_path):
             raise FileNotFoundError(f"File not found: {file_path}")
@@ -172,26 +183,53 @@ class IncrementalUpdateEngine:
         language = identify_language(file_path)
         if not language:
             raise ValueError(f"Unknown language for file: {file_path}")
+        logger.debug("Language: %s", language)
         
         # Get parser
         parser = get_parser_for_file(file_path)
         if not parser:
             raise ValueError(f"No parser available for: {file_path}")
+        logger.debug("Parser: %s", type(parser).__name__)
         
         # Calculate file hash
         file_hash = self.calculate_file_hash(file_path)
         if not file_hash:
             raise IOError(f"Cannot read file: {file_path}")
         
+        # Check if hash changed
+        existing_file_id = self.db.get_file_id_by_path(file_path)
+        hash_changed = True
+        if existing_file_id:
+            existing_hash_result = self.db.execute_query(
+                "SELECT hash FROM files WHERE id = ?", (existing_file_id,)
+            )
+            if existing_hash_result and existing_hash_result[0][0] == file_hash:
+                hash_changed = False
+        logger.debug("Hash changed: %s", hash_changed)
+
+        # Skip processing if hash hasn't changed
+        if not hash_changed:
+            logger.info("Hash unchanged, skipping file: %s", file_path)
+            processing_time = (time.time() - start_time) * 1000
+            stats = UpdateStatistics(
+                file_path=file_path,
+                event_type=event_type,
+                processing_time_ms=processing_time,
+                success=True
+            )
+            self.stats_history.append(stats)
+            return stats
+
         # Parse file
         parse_result = parser.parse_file(file_path)
+        logger.debug("Found %d types, %d functions, %d calls",
+                     len(parse_result.types), len(parse_result.functions), len(parse_result.calls))
         
         # Begin transaction
         self.db.begin_transaction()
         
         try:
             # Step 1: Delete old data if file exists
-            existing_file_id = self.db.get_file_id_by_path(file_path)
             if existing_file_id:
                 self.db.delete_file_data(existing_file_id)
             
@@ -202,6 +240,7 @@ class IncrementalUpdateEngine:
             type_id_map = self._insert_types(parse_result.types, file_id)
 
             # Extend type_id_map with types from other files for cross-file reference resolution
+            cross_file_type_count = 0
             try:
                 existing_types = self.db.execute_query(
                     """SELECT name, id FROM types WHERE file_id != ?""",
@@ -210,12 +249,15 @@ class IncrementalUpdateEngine:
                 for type_name, type_id in existing_types:
                     if type_name not in type_id_map:  # Don't override current file's types
                         type_id_map[type_name] = type_id
+                        cross_file_type_count += 1
             except Exception:
                 pass
+            logger.debug("Cross-file types: %d", cross_file_type_count)
 
             func_id_map = self._insert_functions(parse_result.functions, file_id, type_id_map, language)
 
             # Extend func_id_map with functions from other files for cross-file call resolution
+            cross_file_func_count = 0
             try:
                 existing_funcs = self.db.execute_query(
                     """SELECT f.name, f.type_id, t.name as type_name, f.id
@@ -228,8 +270,10 @@ class IncrementalUpdateEngine:
                     key = f"{type_name or '__module__'}.{func_name}"
                     if key not in func_id_map:  # Don't override current file's functions
                         func_id_map[key] = func_id
+                        cross_file_func_count += 1
             except Exception:
                 pass  # Non-critical: cross-file resolution is best-effort
+            logger.debug("Cross-file functions: %d", cross_file_func_count)
             
             # Step 4: Insert relationships
             self._insert_calls(parse_result.calls, file_id, func_id_map, type_id_map)
@@ -251,6 +295,8 @@ class IncrementalUpdateEngine:
             except Exception:
                 pass  # Don't fail the operation if logging fails
 
+            logger.info("Successfully updated file: %s (%d types, %d functions, %d calls)",
+                        file_path, len(parse_result.types), len(parse_result.functions), len(parse_result.calls))
             stats = UpdateStatistics(
                 file_path=file_path,
                 event_type=event_type,
@@ -276,7 +322,9 @@ class IncrementalUpdateEngine:
                VALUES (?, ?, ?, ?)""",
             (file_path, language, file_hash, int(time.time()))
         )
-        return cursor.lastrowid
+        file_id = cursor.lastrowid
+        logger.debug("Inserted file record with id=%d", file_id)
+        return file_id
     
     def _insert_types(self, types: List[Any], file_id: int) -> Dict[str, int]:
         """Insert type records and return name-to-ID mapping."""
@@ -293,6 +341,7 @@ class IncrementalUpdateEngine:
             type_id = cursor.lastrowid
             type_id_map[type_info.name] = type_id
         
+        logger.debug("Inserted %d types", len(types))
         return type_id_map
     
     def _insert_functions(self, functions: List[Any], file_id: int, 
@@ -318,6 +367,7 @@ class IncrementalUpdateEngine:
             key = f"{func_info.type_name or '__module__'}.{func_info.name}"
             func_id_map[key] = func_id
         
+        logger.debug("Inserted %d functions", len(functions))
         return func_id_map
     
     def _insert_calls(self, calls: List[Any], file_id: int, func_id_map: Dict[str, int],
@@ -328,6 +378,8 @@ class IncrementalUpdateEngine:
         falls back to type_id_map to record the call.
         """
         cursor = self.db.connection.cursor()
+        inserted = 0
+        skipped = 0
 
         for call_info in calls:
             caller_key = f"{call_info.caller_type or '__module__'}.{call_info.caller_name}"
@@ -346,10 +398,16 @@ class IncrementalUpdateEngine:
                        VALUES (?, ?, ?, ?)""",
                     (caller_id, callee_id, file_id, call_info.line_number)
                 )
+                inserted += 1
+            else:
+                skipped += 1
+
+        logger.debug("Inserted %d calls, %d skipped (no callee found)", inserted, skipped)
     
     def _insert_references(self, references: List[Any], file_id: int, type_id_map: Dict[str, int]):
         """Insert reference relationships."""
         cursor = self.db.connection.cursor()
+        inserted = 0
         
         for ref_info in references:
             from_id = type_id_map.get(ref_info.from_name)
@@ -361,12 +419,16 @@ class IncrementalUpdateEngine:
                        VALUES (?, ?, ?, ?, ?)""",
                     (from_id, to_id, ref_info.ref_kind, file_id, ref_info.line_number)
                 )
+                inserted += 1
+        
+        logger.debug("Inserted %d references", inserted)
     
     def perform_full_sync(self, project_path: str) -> Dict[str, Any]:
         """
         Perform a full synchronization of the project.
         Scans all files, compares hashes, and updates changed files.
         """
+        logger.info("Starting full sync for %s", project_path)
         with self._sync_lock:
             # Ensure WAL data is merged before sync to handle crash recovery.
             # After a SIGKILL, the WAL file may contain uncommitted pages
@@ -467,6 +529,11 @@ class IncrementalUpdateEngine:
         
         total_time = time.time() - start_time
         
+        logger.info(
+            "Full sync completed: %d updated, %d deleted, %d unchanged, %d errors in %.2fs",
+            updated_count, deleted_count, len(code_files) - updated_count, len(errors), total_time
+        )
+
         return {
             'total_time_seconds': total_time,
             'files_updated': updated_count,
@@ -500,6 +567,7 @@ class IncrementalUpdateEngine:
                     file_path = os.path.join(root, filename)
                     code_files.append(file_path)
         
+        logger.debug("Scanning %s, found %d code files", project_path, len(code_files))
         return code_files
     
     def get_recent_statistics(self, count: int = 10) -> List[UpdateStatistics]:

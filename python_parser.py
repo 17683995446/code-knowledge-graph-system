@@ -11,6 +11,10 @@ from parser_interface import (
     CallInfo, ReferenceInfo, register_parser
 )
 
+from logging_config import get_logger
+
+logger = get_logger(__name__)
+
 # Try to import tree-sitter, fallback to regex if not available
 try:
     from tree_sitter import Language, Parser
@@ -70,6 +74,7 @@ class PythonParser(CodeParser):
         Returns:
             ParseResult with extracted types, functions, calls, and references
         """
+        logger.debug("Parsing file: %s", file_path)
         result = ParseResult()
         
         # Read source code if not provided
@@ -78,14 +83,21 @@ class PythonParser(CodeParser):
                 with open(file_path, 'r', encoding='utf-8') as file:
                     source_code = file.read()
             except Exception as error:
+                logger.error("Failed to read file %s: %s", file_path, error)
                 result.errors.append(f"Failed to read file: {error}")
                 return result
         
         # Use tree-sitter if available, otherwise fallback
         if TREE_SITTER_AVAILABLE and self._parser:
-            return self._parse_with_tree_sitter(source_code, file_path)
+            logger.debug("Using tree-sitter parser")
+            result = self._parse_with_tree_sitter(source_code, file_path)
         else:
-            return self._parse_with_regex(source_code, file_path)
+            logger.debug("Falling back to regex parser")
+            result = self._parse_with_regex(source_code, file_path)
+        
+        logger.debug("Parse result: %d types, %d functions, %d calls",
+                     len(result.types), len(result.functions), len(result.calls))
+        return result
     
     def _parse_with_tree_sitter(self, source_code: str, file_path: str) -> ParseResult:
         """Parse using tree-sitter for accurate AST analysis."""
@@ -101,7 +113,10 @@ class PythonParser(CodeParser):
             # Extract imports
             self._extract_imports(root_node, source_code, result)
             
+            logger.debug("Tree-sitter parse successful")
+            
         except Exception as error:
+            logger.warning("Tree-sitter parse failed: %s, falling back to regex", error)
             result.errors.append(f"Tree-sitter parsing error: {error}")
             # Fallback to regex
             return self._parse_with_regex(source_code, file_path)
@@ -320,6 +335,7 @@ class PythonParser(CodeParser):
             class_match = re.match(r'^class\s+(\w+)\s*(?:\(([^)]*)\))?:', stripped)
             if class_match:
                 class_name = class_match.group(1)
+                logger.debug("Regex parse: line %d: detected class '%s'", line_num, class_name)
                 result.types.append(TypeInfo(
                     name=class_name,
                     kind='class',
@@ -347,6 +363,7 @@ class PythonParser(CodeParser):
             func_match = re.match(r'^(?:async\s+)?def\s+(\w+)\s*\(([^)]*)\)', stripped)
             if func_match:
                 func_name = func_match.group(1)
+                logger.debug("Regex parse: line %d: detected function '%s'", line_num, func_name)
                 signature = f"({func_match.group(2)})"
                 result.functions.append(FunctionInfo(
                     name=func_name,
@@ -403,6 +420,7 @@ class PythonParser(CodeParser):
                     if base_name in ('self', 'cls'):
                         continue
                     callee_name = call_expr.split('.')[-1] if '.' in call_expr else call_expr
+                    logger.debug("Regex parse: line %d: detected call '%s'", line_num, callee_name)
                     result.calls.append(CallInfo(
                         caller_name=caller_name,
                         caller_type=caller_type,

@@ -8,6 +8,10 @@ import sqlite3
 import os
 import threading
 
+from logging_config import get_logger
+
+logger = get_logger(__name__)
+
 
 # SQL statements for creating tables
 CREATE_TABLES_SQL = """
@@ -121,6 +125,7 @@ class DatabaseManager:
     
     def __init__(self, database_path):
         """Initialize database manager with the given database path."""
+        logger.info("Initializing DatabaseManager with database path: %s", database_path)
         self.database_path = database_path
         self._local = threading.local()
         self._all_connections = set()
@@ -137,8 +142,17 @@ class DatabaseManager:
     def _get_connection(self):
         """Get thread-local database connection."""
         if self._closed:
+            logger.error("DatabaseManager has been closed")
             raise RuntimeError("DatabaseManager has been closed")
+        if hasattr(self._local, 'connection') and self._local.connection is not None:
+            # Verify the connection is still alive (may have been closed by close_all from another thread)
+            try:
+                self._local.connection.execute("SELECT 1")
+            except Exception:
+                logger.debug("Stale connection detected, creating new one for thread %s", threading.current_thread().name)
+                self._local.connection = None
         if not hasattr(self._local, 'connection') or self._local.connection is None:
+            logger.debug("Creating new connection for thread %s", threading.current_thread().name)
             conn = sqlite3.connect(self.database_path, timeout=30)
             conn.execute("PRAGMA foreign_keys = ON")
             conn.execute("PRAGMA journal_mode = WAL")
@@ -150,6 +164,8 @@ class DatabaseManager:
                 self._all_connections.add(conn)
             self._local.connection = conn
             self._local.in_transaction = False
+        else:
+            logger.debug("Reusing existing connection for thread %s", threading.current_thread().name)
         return self._local.connection
     
     @property
@@ -164,6 +180,7 @@ class DatabaseManager:
     def close(self):
         """Close the current thread's database connection."""
         if hasattr(self._local, 'connection') and self._local.connection:
+            logger.debug("Closing connection for thread %s", threading.current_thread().name)
             conn = self._local.connection
             with self._connections_lock:
                 self._all_connections.discard(conn)
@@ -174,13 +191,17 @@ class DatabaseManager:
     def close_all(self):
         """Close all database connections across all threads."""
         with self._connections_lock:
+            count = len(self._all_connections)
+            logger.info("Closing all %d connections", count)
             for conn in list(self._all_connections):
                 try:
                     conn.close()
+                    logger.debug("Closed connection: %s", conn)
                 except Exception:
                     pass
             self._all_connections.clear()
         self._closed = True
+        logger.info("All connections closed")
         # Also clear thread-local reference
         if hasattr(self._local, 'connection'):
             self._local.connection = None
@@ -193,17 +214,25 @@ class DatabaseManager:
     
     def begin_transaction(self):
         """Begin a new explicit transaction."""
+        logger.debug("BEGIN TRANSACTION")
         conn = self._get_connection()
-        conn.execute("BEGIN TRANSACTION")
+        # Ensure no pending implicit transaction before starting explicit one
+        try:
+            conn.execute("END")
+        except Exception:
+            pass
+        conn.execute("BEGIN IMMEDIATE TRANSACTION")
         self._local.in_transaction = True
     
     def commit_transaction(self):
         """Commit current transaction."""
+        logger.debug("COMMIT")
         self._get_connection().commit()
         self._local.in_transaction = False
     
     def rollback_transaction(self):
         """Rollback current transaction."""
+        logger.debug("ROLLBACK")
         self._get_connection().rollback()
         self._local.in_transaction = False
     
@@ -215,7 +244,10 @@ class DatabaseManager:
             'INSERT', 'UPDATE', 'DELETE', 'REPLACE',
             'DROP', 'CREATE', 'ALTER', 'PRAGMA',
         )
-        return any(stripped.startswith(prefix) for prefix in write_prefixes)
+        is_write = any(stripped.startswith(prefix) for prefix in write_prefixes)
+        if is_write:
+            logger.debug("Query classified as write: %s", query[:50])
+        return is_write
     
     def execute_query(self, query, parameters=None):
         """Execute a query and return results.
@@ -226,6 +258,8 @@ class DatabaseManager:
         """
         conn = self._get_connection()
         cursor = conn.cursor()
+        if self._is_write_query(query):
+            logger.debug("Executing query: %s...", query[:100])
         if parameters:
             cursor.execute(query, parameters)
         else:
@@ -235,6 +269,7 @@ class DatabaseManager:
         # This prevents data loss when multiple threads perform writes
         # through execute_query without manually calling commit_transaction().
         if not self._local.in_transaction and self._is_write_query(query):
+            logger.debug("Auto-commit triggered")
             conn.commit()
         
         return cursor.fetchall()
@@ -292,10 +327,11 @@ class DatabaseManager:
 
 def create_database(database_path):
     """Create a new database with the complete schema."""
-    with DatabaseManager(database_path) as db_manager:
-        db_manager.initialize_schema()
-        print(f"Database initialized at: {database_path}")
-        return db_manager
+    db_manager = DatabaseManager(database_path)
+    db_manager.connect()
+    db_manager.initialize_schema()
+    print(f"Database initialized at: {database_path}")
+    return db_manager
 
 
 if __name__ == '__main__':

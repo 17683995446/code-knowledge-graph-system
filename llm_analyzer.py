@@ -8,6 +8,7 @@ import os
 import json
 import hashlib
 import time
+import threading
 from typing import Optional, Dict, Any, List
 from dataclasses import dataclass
 from enum import Enum
@@ -64,6 +65,7 @@ class LLMCodeAnalyzer:
         self.cache: OrderedDict[str, AnalysisResult] = OrderedDict()  # LRU cache
         self.cache_ttl = 300  # 5 minutes cache
         self.max_cache_size = 1000  # Maximum cache entries to prevent memory leak
+        self._cache_lock = threading.Lock()  # Thread-safe cache access
     
     def is_available(self) -> bool:
         """Check if LLM service is available."""
@@ -116,17 +118,18 @@ class LLMCodeAnalyzer:
         """
         start_time = time.time()
         
-        # Check cache
+        # Check cache (thread-safe)
         cache_key = f"{hashlib.md5(code.encode('utf-8')).hexdigest()}_{analysis_type.value}"
-        if cache_key in self.cache:
-            cached = self.cache[cache_key]
-            if time.time() - cached.timestamp < self.cache_ttl:
-                # Move to end (most recently used)
-                self.cache.move_to_end(cache_key)
-                return cached
-            else:
-                # Expired, remove it
-                del self.cache[cache_key]
+        with self._cache_lock:
+            if cache_key in self.cache:
+                cached = self.cache[cache_key]
+                if time.time() - cached.timestamp < self.cache_ttl:
+                    # Move to end (most recently used)
+                    self.cache.move_to_end(cache_key)
+                    return cached
+                else:
+                    # Expired, remove it
+                    del self.cache[cache_key]
         
         # Build prompt based on analysis type
         prompt = self._build_analysis_prompt(code, analysis_type, context)
@@ -161,12 +164,13 @@ class LLMCodeAnalyzer:
                 error_message="Failed to get response from LLM API"
             )
         
-        # Cache successful results with LRU eviction
+        # Cache successful results with LRU eviction (thread-safe)
         if result.success:
-            # Evict oldest entries if cache is full
-            while len(self.cache) >= self.max_cache_size:
-                self.cache.popitem(last=False)  # Remove oldest (FIFO)
-            self.cache[cache_key] = result
+            with self._cache_lock:
+                # Evict oldest entries if cache is full
+                while len(self.cache) >= self.max_cache_size:
+                    self.cache.popitem(last=False)  # Remove oldest (FIFO)
+                self.cache[cache_key] = result
         
         return result
     
@@ -274,7 +278,8 @@ Architecture Insights:"""
     
     def clear_cache(self):
         """Clear the analysis cache."""
-        self.cache.clear()
+        with self._cache_lock:
+            self.cache.clear()
 
 
 class MockLLMAnalyzer(LLMCodeAnalyzer):
