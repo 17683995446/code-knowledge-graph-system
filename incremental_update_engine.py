@@ -572,7 +572,10 @@ class IncrementalUpdateEngine:
     
     def get_recent_statistics(self, count: int = 10) -> List[UpdateStatistics]:
         """Get recent update statistics."""
-        return self.stats_history[-count:] if self.stats_history else []
+        if not self.stats_history:
+            return []
+        # Convert to list for slicing (deque doesn't support slice)
+        return list(self.stats_history)[-count:]
     
     def clear_statistics(self):
         """Clear statistics history."""
