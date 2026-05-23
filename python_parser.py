@@ -22,7 +22,9 @@ try:
     TREE_SITTER_AVAILABLE = True
 except ImportError:
     TREE_SITTER_AVAILABLE = False
-    import re
+
+# Always import re for regex fallback
+import re
 
 
 class PythonParser(CodeParser):
