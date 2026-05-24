@@ -67,10 +67,8 @@ class CodeKnowledgeGraphService:
         os.makedirs(os.path.dirname(self.database_path), exist_ok=True)
         os.makedirs(os.path.join(os.path.dirname(__file__), 'static', 'diagrams'), exist_ok=True)
         
-        # Initialize database
-        create_database(self.database_path)
-        self.db_manager = DatabaseManager(self.database_path)
-        self.db_manager.connect()
+        # Initialize database (reuse the manager returned by create_database)
+        self.db_manager = create_database(self.database_path)
         
         # Initialize update engine
         self.update_engine = IncrementalUpdateEngine(self.db_manager)

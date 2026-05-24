@@ -82,6 +82,9 @@ class ParseResult:
     calls: List[CallInfo] = field(default_factory=list)
     references: List[ReferenceInfo] = field(default_factory=list)
     errors: List[str] = field(default_factory=list)
+    # Internal state for regex parser (not part of public API)
+    _last_func_name: Optional[str] = None
+    _method_indent: Optional[int] = None
     
     def is_empty(self) -> bool:
         """Check if parse result contains any data."""

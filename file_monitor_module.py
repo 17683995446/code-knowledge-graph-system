@@ -342,7 +342,8 @@ class FileMonitor:
         for part in parts:
             if part.startswith('.') and part not in ('.', '..'):
                 return False
-            if part in ('node_modules', '__pycache__', 'venv', '.git', 'dist', 'build'):
+            if part in ('node_modules', '__pycache__', 'venv', '.venv', '.git',
+                        'dist', 'build', '.idea', '.vscode'):
                 return False
         
         ext = os.path.splitext(file_path)[1].lower()

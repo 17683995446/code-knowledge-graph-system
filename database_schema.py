@@ -216,9 +216,9 @@ class DatabaseManager:
         """Begin a new explicit transaction."""
         logger.debug("BEGIN TRANSACTION")
         conn = self._get_connection()
-        # Ensure no pending implicit transaction before starting explicit one
+        # Safely discard any pending implicit transaction before starting explicit one
         try:
-            conn.execute("END")
+            conn.execute("ROLLBACK")
         except Exception:
             pass
         conn.execute("BEGIN IMMEDIATE TRANSACTION")
