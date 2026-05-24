@@ -268,10 +268,15 @@ class DatabaseManager:
         # Auto-commit write operations when not in an explicit transaction.
         # This prevents data loss when multiple threads perform writes
         # through execute_query without manually calling commit_transaction().
-        if not self._local.in_transaction and self._is_write_query(query):
+        is_write = self._is_write_query(query)
+        if not self._local.in_transaction and is_write:
             logger.debug("Auto-commit triggered")
             conn.commit()
         
+        # For write operations, return rowcount instead of fetchall (which returns [])
+        # This allows callers to verify the operation affected rows
+        if is_write:
+            return cursor.rowcount
         return cursor.fetchall()
     
     def execute_many(self, query, parameters_list):

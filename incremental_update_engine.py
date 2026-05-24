@@ -14,7 +14,8 @@ from dataclasses import dataclass
 
 from logging_config import get_logger
 from database_schema import DatabaseManager
-from parser_interface import get_parser_for_file, identify_language, ParseResult
+from parser_interface import get_parser_for_file, identify_language, ParseResult, \
+    SUPPORTED_CODE_EXTENSIONS, SKIP_DIRECTORY_NAMES
 from file_monitor_module import FileEvent, FileEventType
 
 logger = get_logger(__name__)
@@ -94,29 +95,23 @@ class IncrementalUpdateEngine:
                     logger.warning("Retry attempt %d for %s (database locked)", attempt + 1, event.file_path)
                     time.sleep(0.05 * (attempt + 1))  # Exponential backoff: 50ms, 100ms
                     continue
-                logger.error("Failed to process event %s for %s: %s", event.event_type.value, event.file_path, error)
-                processing_time = (time.time() - start_time) * 1000
-                stats = UpdateStatistics(
-                    file_path=event.file_path,
-                    event_type=event.event_type.value,
-                    processing_time_ms=processing_time,
-                    success=False,
-                    error_message=str(error)
-                )
-                self.stats_history.append(stats)
-                return stats
+                return self._make_error_stats(event, start_time, error)
             except Exception as error:
-                logger.error("Failed to process event %s for %s: %s", event.event_type.value, event.file_path, error)
-                processing_time = (time.time() - start_time) * 1000
-                stats = UpdateStatistics(
-                    file_path=event.file_path,
-                    event_type=event.event_type.value,
-                    processing_time_ms=processing_time,
-                    success=False,
-                    error_message=str(error)
-                )
-                self.stats_history.append(stats)
-                return stats
+                return self._make_error_stats(event, start_time, error)
+    
+    def _make_error_stats(self, event: FileEvent, start_time: float, error: Exception) -> UpdateStatistics:
+        """Create error statistics for a failed event processing."""
+        logger.error("Failed to process event %s for %s: %s", event.event_type.value, event.file_path, error)
+        processing_time = (time.time() - start_time) * 1000
+        stats = UpdateStatistics(
+            file_path=event.file_path,
+            event_type=event.event_type.value,
+            processing_time_ms=processing_time,
+            success=False,
+            error_message=str(error)
+        )
+        self.stats_history.append(stats)
+        return stats
     
     def _handle_file_deletion(self, file_path: str, start_time: float) -> UpdateStatistics:
         """Handle file deletion - remove all related data."""
@@ -545,25 +540,17 @@ class IncrementalUpdateEngine:
     def _scan_project_files(self, project_path: str) -> List[str]:
         """Scan project directory for code files."""
         code_files = []
-        supported_extensions = {
-            '.py', '.pyw', '.java', '.js', '.jsx', '.ts', '.tsx', '.go', '.rs',
-            '.c', '.h', '.cpp', '.hpp', '.cs', '.php', '.rb', '.swift',
-            '.kt', '.scala', '.dart', '.lua'
-        }
-        
-        skip_dirs = {'.git', '__pycache__', 'node_modules', 'venv', '.venv', 
-                     'dist', 'build', '.idea', '.vscode'}
         
         for root, dirs, files in os.walk(project_path):
             # Skip hidden and common non-code directories
-            dirs[:] = [d for d in dirs if not d.startswith('.') and d not in skip_dirs]
+            dirs[:] = [d for d in dirs if not d.startswith('.') and d not in SKIP_DIRECTORY_NAMES]
             
             for filename in files:
                 # Skip hidden files (starting with .)
                 if filename.startswith('.'):
                     continue
                 ext = os.path.splitext(filename)[1].lower()
-                if ext in supported_extensions:
+                if ext in SUPPORTED_CODE_EXTENSIONS:
                     file_path = os.path.join(root, filename)
                     code_files.append(file_path)
         

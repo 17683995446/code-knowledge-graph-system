@@ -5,8 +5,24 @@ Defines the universal parser interface that all language-specific parsers must i
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Set
 from enum import Enum
+
+
+# ============================================================
+# Shared constants - canonical source of truth for all modules
+# ============================================================
+
+SUPPORTED_CODE_EXTENSIONS: Set[str] = {
+    '.py', '.pyw', '.java', '.js', '.jsx', '.ts', '.tsx', '.go', '.rs',
+    '.c', '.h', '.cpp', '.hpp', '.cs', '.php', '.rb', '.swift',
+    '.kt', '.scala', '.dart', '.lua'
+}
+
+SKIP_DIRECTORY_NAMES: Set[str] = {
+    '.git', '__pycache__', 'node_modules', 'venv', '.venv',
+    'dist', 'build', '.idea', '.vscode'
+}
 
 
 class EntityKind(Enum):

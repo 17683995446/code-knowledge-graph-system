@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from enum import Enum
 
 from logging_config import get_logger
+from parser_interface import SUPPORTED_CODE_EXTENSIONS, SKIP_DIRECTORY_NAMES
 
 logger = get_logger(__name__)
 
@@ -160,11 +161,7 @@ if WATCHDOG_AVAILABLE:
         def __init__(self, debounce_queue: DebounceMergeQueue, 
                      supported_extensions: Optional[Set[str]] = None):
             self.queue = debounce_queue
-            self.supported_extensions = supported_extensions or {
-                '.py', '.java', '.js', '.jsx', '.ts', '.tsx', '.go', '.rs',
-                '.c', '.h', '.cpp', '.hpp', '.cs', '.php', '.rb', '.swift',
-                '.kt', '.scala', '.dart', '.lua'
-            }
+            self.supported_extensions = supported_extensions or SUPPORTED_CODE_EXTENSIONS
         
         def _is_code_file(self, file_path: str) -> bool:
             """Check if file is a code file we should track."""
@@ -173,7 +170,7 @@ if WATCHDOG_AVAILABLE:
             for part in parts:
                 if part.startswith('.') and part not in ('.', '..'):
                     return False
-                if part in ('node_modules', '__pycache__', 'venv', '.git', 'dist', 'build'):
+                if part in SKIP_DIRECTORY_NAMES:
                     return False
             
             # Check extension
@@ -342,14 +339,11 @@ class FileMonitor:
         for part in parts:
             if part.startswith('.') and part not in ('.', '..'):
                 return False
-            if part in ('node_modules', '__pycache__', 'venv', '.venv', '.git',
-                        'dist', 'build', '.idea', '.vscode'):
+            if part in SKIP_DIRECTORY_NAMES:
                 return False
         
         ext = os.path.splitext(file_path)[1].lower()
-        return ext in {'.py', '.java', '.js', '.jsx', '.ts', '.tsx', '.go', '.rs',
-                       '.c', '.h', '.cpp', '.hpp', '.cs', '.php', '.rb', '.swift',
-                       '.kt', '.scala', '.dart', '.lua'}
+        return ext in SUPPORTED_CODE_EXTENSIONS
     
     def stop(self):
         """Stop file monitoring."""
